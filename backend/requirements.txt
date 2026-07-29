@@ -1,0 +1,6 @@
+pennylane>=0.35
+pennylane-lightning
+numpy
+matplotlib
+fastapi
+uvicorn

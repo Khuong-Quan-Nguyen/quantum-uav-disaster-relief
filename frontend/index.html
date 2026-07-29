@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signal Restore — Quantum UAV Dispatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0E1420;
+    --panel: #161D2E;
+    --panel-2: #131A29;
+    --border: #232C42;
+    --text: #E9EDF3;
+    --muted: #8B93A7;
+    --amber: #E8935B;
+    --teal: #4FC3B0;
+    --green: #6FCF97;
+    --red: #E4574C;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .brand h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.15rem;
+    letter-spacing: 0.04em;
+    margin: 0;
+    text-transform: uppercase;
+  }
+
+  .brand .sub {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .status-pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    padding: 5px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+  .status-pill.offline { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, var(--border)); }
+  .status-pill.running { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--border)); }
+  .status-pill.restored { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, var(--border)); }
+
+  button#runBtn {
+    font-family: 'Space Mono', monospace;
+    background: var(--teal);
+    color: #06231F;
+    border: none;
+    padding: 11px 22px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  button#runBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(79,195,176,0.25); }
+  button#runBtn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  button#runBtn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  main {
+    padding: 24px 28px 40px;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 20px;
+  }
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .panel-head {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+
+  /* --- MAP --- */
+  #mapWrap { padding: 16px; }
+  svg#map { width: 100%; height: auto; display: block; }
+  .zone-dot { fill: var(--amber); }
+  .zone-ring {
+    fill: none;
+    stroke: var(--amber);
+    stroke-width: 1.4;
+    opacity: 0.55;
+    transform-origin: center;
+    animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { r: 6; opacity: 0.55; }
+    100% { r: 20; opacity: 0; }
+  }
+  .uav-dot { fill: var(--teal); }
+  .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    fill: var(--text);
+  }
+  .label-muted {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 8.5px;
+    fill: var(--muted);
+  }
+  .link-line {
+    stroke: var(--teal);
+    stroke-width: 1.6;
+    stroke-dasharray: 5 4;
+    fill: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .link-line.active { opacity: 0.9; }
+
+  /* --- CONSOLE --- */
+  #console {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.65;
+    padding: 14px 16px;
+    height: 260px;
+    overflow-y: auto;
+    color: #C7D6D3;
+  }
+  #console .line { white-space: pre-wrap; word-break: break-word; }
+  #console .line::before { content: "> "; color: var(--teal); }
+  #console .empty { color: var(--muted); }
+  #console .empty::before { content: ""; }
+
+  .progress-track {
+    height: 4px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--border);
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--teal);
+    transition: width 0.25s ease;
+  }
+
+  /* --- RESULTS --- */
+  #results {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 700px) {
+    #results { grid-template-columns: 1fr; }
+  }
+  .result-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .result-card .k {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .result-card .v {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.4rem;
+    color: var(--text);
+  }
+  .result-card .v.match { color: var(--green); }
+  .result-card .assign { font-size: 0.78rem; color: var(--muted); margin-top: 6px; font-family: 'IBM Plex Mono', monospace; }
+
+  footer {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px 40px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.6;
+  }
+  footer a { color: var(--teal); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .zone-ring { animation: none; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Signal Restore</h1>
+    <span class="sub">quantum-optimized UAV relay dispatch</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span class="status-pill offline" id="statusPill">NETWORK OFFLINE</span>
+    <button id="runBtn">Run optimization</button>
+  </div>
+</header>
+
+<main>
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-head">Mission map — central Vietnam flood zones</div>
+      <div id="mapWrap">
+        <svg id="map" viewBox="0 0 400 420"></svg>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">Optimizer console</div>
+      <div id="console"><div class="line empty">Idle. Press "Run optimization" to dispatch UAVs.</div></div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+  </div>
+
+  <div id="results" style="display:none;">
+    <div class="result-card">
+      <div class="k">Classical baseline</div>
+      <div class="v" id="classicalKm">—</div>
+      <div class="assign" id="classicalAssign"></div>
+    </div>
+    <div class="result-card">
+      <div class="k">Quantum (QAOA)</div>
+      <div class="v" id="quantumKm">—</div>
+      <div class="assign" id="quantumAssign"></div>
+    </div>
+    <div class="result-card">
+      <div class="k">Outcome</div>
+      <div class="v" id="outcome">—</div>
+      <div class="assign" id="qubitsUsed"></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Illustrative scenario: 2 UAVs dispatched from staging points to restore connectivity
+  across 3 flood-prone central Vietnamese provinces. Distances are real
+  great-circle calculations from approximate coordinates — no live disaster
+  or sensor data is used. QAOA is solved on a simulated quantum device
+  (PennyLane <code>lightning.qubit</code>); at this problem size it's
+  expected to match, not beat, the classical brute-force optimum — see the
+  project README for details.
+</footer>
+
+<script>
+const runBtn = document.getElementById('runBtn');
+const statusPill = document.getElementById('statusPill');
+const consoleEl = document.getElementById('console');
+const progressFill = document.getElementById('progressFill');
+const resultsEl = document.getElementById('results');
+
+let scenario = null;
+
+function setStatus(kind, text) {
+  statusPill.className = 'status-pill ' + kind;
+  statusPill.textContent = text;
+}
+
+function logLine(msg) {
+  if (consoleEl.querySelector('.empty')) consoleEl.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'line';
+  div.textContent = msg;
+  consoleEl.appendChild(div);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+// --- Map rendering ---
+function project(lat, lon, bounds) {
+  const { minLat, maxLat, minLon, maxLon } = bounds;
+  const pad = 40;
+  const w = 400, h = 420;
+  const x = pad + (lon - minLon) / (maxLon - minLon) * (w - 2 * pad);
+  const y = h - pad - (lat - minLat) / (maxLat - minLat) * (h - 2 * pad);
+  return [x, y];
+}
+
+function renderMap(data, assignment) {
+  const allLats = [], allLons = [];
+  Object.values(data.flood_zones).forEach(p => { allLats.push(p.lat); allLons.push(p.lon); });
+  Object.values(data.uav_bases).forEach(p => { allLats.push(p.lat); allLons.push(p.lon); });
+  const bounds = {
+    minLat: Math.min(...allLats) - 0.3, maxLat: Math.max(...allLats) + 0.3,
+    minLon: Math.min(...allLons) - 0.3, maxLon: Math.max(...allLons) + 0.3,
+  };
+
+  const svg = document.getElementById('map');
+  svg.innerHTML = '';
+
+  const zonePos = {}, uavPos = {};
+  for (const [name, p] of Object.entries(data.flood_zones)) zonePos[name] = project(p.lat, p.lon, bounds);
+  for (const [name, p] of Object.entries(data.uav_bases)) uavPos[name] = project(p.lat, p.lon, bounds);
+
+  // links (drawn first, under the dots)
+  if (assignment) {
+    for (const [uav, zone] of Object.entries(assignment)) {
+      if (!zone) continue;
+      const [x1, y1] = uavPos[uav];
+      const [x2, y2] = zonePos[zone];
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('class', 'link-line active');
+      svg.appendChild(line);
+    }
+  }
+
+  for (const [name, [x, y]] of Object.entries(zonePos)) {
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    ring.setAttribute('cx', x); ring.setAttribute('cy', y); ring.setAttribute('r', 6);
+    ring.setAttribute('class', 'zone-ring');
+    svg.appendChild(ring);
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', 5.5);
+    dot.setAttribute('class', 'zone-dot');
+    svg.appendChild(dot);
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', x + 9); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'label');
+    label.textContent = name;
+    svg.appendChild(label);
+  }
+
+  for (const [name, [x, y]] of Object.entries(uavPos)) {
+    const tri = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const s = 7;
+    tri.setAttribute('points', `${x},${y - s} ${x - s},${y + s} ${x + s},${y + s}`);
+    tri.setAttribute('class', 'uav-dot');
+    svg.appendChild(tri);
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', x + 10); label.setAttribute('y', y + 4);
+    label.setAttribute('class', 'label-muted');
+    label.textContent = name;
+    svg.appendChild(label);
+  }
+}
+
+async function loadScenario() {
+  const res = await fetch('/api/scenario');
+  scenario = await res.json();
+  renderMap(scenario, null);
+}
+
+async function pollJob(jobId) {
+  let seenLogCount = 0;
+  while (true) {
+    const res = await fetch(`/api/status/${jobId}`);
+    const job = await res.json();
+
+    while (seenLogCount < job.log.length) {
+      logLine(job.log[seenLogCount]);
+      seenLogCount++;
+    }
+    progressFill.style.width = `${Math.round((job.progress || 0) * 100)}%`;
+
+    if (job.status === 'done') {
+      renderResults(job.result);
+      renderMap(scenario, job.result.classical.assignment);
+      setStatus('restored', 'CONNECTIVITY RESTORED');
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run again';
+      return;
+    }
+    if (job.status === 'error') {
+      logLine('ERROR: ' + job.error);
+      setStatus('offline', 'OPTIMIZATION FAILED');
+      runBtn.disabled = false;
+      runBtn.textContent = 'Retry';
+      return;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+function renderResults(result) {
+  resultsEl.style.display = 'grid';
+  document.getElementById('classicalKm').textContent = result.classical.total_km.toFixed(1) + ' km';
+  document.getElementById('classicalAssign').textContent =
+    Object.entries(result.classical.assignment).map(([u, z]) => `${u} → ${z}`).join('  ·  ');
+
+  const qKm = result.quantum.valid ? result.quantum.total_km.toFixed(1) + ' km' : 'invalid';
+  document.getElementById('quantumKm').textContent = qKm;
+  document.getElementById('quantumAssign').textContent = result.quantum.valid
+    ? Object.entries(result.quantum.assignment).map(([u, z]) => `${u} → ${z}`).join('  ·  ')
+    : 'penalty constraint violated on this run';
+
+  const outcomeEl = document.getElementById('outcome');
+  const matches = result.quantum.valid &&
+    Math.abs(result.quantum.total_km - result.classical.total_km) < 0.05;
+  outcomeEl.textContent = matches ? 'MATCH' : (result.quantum.valid ? 'SUBOPTIMAL' : 'NO MATCH');
+  outcomeEl.className = 'v' + (matches ? ' match' : '');
+  document.getElementById('qubitsUsed').textContent = `${result.qubits_used} qubits · lightning.qubit simulator`;
+}
+
+runBtn.addEventListener('click', async () => {
+  runBtn.disabled = true;
+  runBtn.textContent = 'Running…';
+  setStatus('running', 'DISPATCHING UAVS');
+  resultsEl.style.display = 'none';
+  consoleEl.innerHTML = '';
+  progressFill.style.width = '0%';
+  renderMap(scenario, null);
+
+  const res = await fetch('/api/run', { method: 'POST' });
+  const { job_id } = await res.json();
+  pollJob(job_id);
+});
+
+loadScenario();
+</script>
+</body>
+</html>
