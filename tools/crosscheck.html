@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>QAOA cross-check fixtures</title>
+</head>
+<body>
+<!--
+  Headless harness for tools/crosscheck.py. Loads the browser simulator,
+  evaluates a fixed set of fixtures, and dumps them as JSON into #out where
+  the Python side can read them back with `chrome --dump-dom`.
+  Nothing here is part of the deployed site.
+-->
+<pre id="out">PENDING</pre>
+<script src="../frontend/qaoa.js"></script>
+<script>
+(function () {
+  const { distance, uavNames, zoneNames } = QAOA.buildDistanceMatrix(QAOA.FLOOD_ZONES, QAOA.UAV_BASES);
+  const nUavs = uavNames.length, nZones = zoneNames.length;
+  const qubo = QAOA.buildQubo(distance, nUavs, nZones);
+  const nQubits = qubo.nQubits;
+  const ising = QAOA.buildIsing(qubo);
+  const energies = QAOA.buildEnergies(ising, nQubits);
+
+  // Fixed parameter sets -- deterministic, so both sides must agree exactly.
+  const FIXTURES = [
+    { gammas: [0.3, 1.1], betas: [0.7, 2.4] },
+    { gammas: [1.9, 0.05], betas: [2.2, 0.9] },
+    { gammas: [0.0, 0.0], betas: [0.0, 0.0] },
+    { gammas: [Math.PI / 2, Math.PI / 3], betas: [Math.PI / 4, Math.PI / 5] },
+  ];
+
+  const fixtures = FIXTURES.map(p => ({
+    params: p,
+    expval: QAOA.expval(p, energies, nQubits),
+    probs: Array.from(QAOA.probsOf(QAOA.simulate(p.gammas, p.betas, energies, nQubits))),
+  }));
+
+  const payload = {
+    distance_matrix: distance,
+    qubo: {
+      diag: Array.from(qubo.diag),
+      pair: Array.from(qubo.pair),
+      const_term: qubo.constTerm,
+    },
+    ising: {
+      h: Array.from(ising.h),
+      J: Array.from(ising.J),
+      offset: ising.offset,
+      energy_const: ising.energyConst,
+    },
+    energies: Array.from(energies),
+    fixtures: fixtures,
+  };
+
+  // Seeded end-to-end run so the final assignment is reproducible too.
+  QAOA.run({ seed: 20260831, yieldEvery: 0 }).then(result => {
+    payload.pipeline = result;
+    document.getElementById('out').textContent = JSON.stringify(payload);
+  }).catch(err => {
+    document.getElementById('out').textContent = JSON.stringify({ error: String(err) });
+  });
+})();
+</script>
+</body>
+</html>
