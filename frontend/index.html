@@ -285,15 +285,16 @@
 </main>
 
 <footer>
-  Illustrative scenario: 2 UAVs dispatched from staging points to restore connectivity
-  across 3 flood-prone central Vietnamese provinces. Distances are real
-  great-circle calculations from approximate coordinates — no live disaster
-  or sensor data is used. QAOA is solved on a simulated quantum device
-  (PennyLane <code>lightning.qubit</code>); at this problem size it's
-  expected to match, not beat, the classical brute-force optimum — see the
-  project README for details.
+  Illustrative scenario: 2 UAVs dispatched from staging points to restore
+  connectivity across 3 flood-prone central Vietnamese provinces. Distances are
+  real great-circle calculations from approximate coordinates — no live disaster
+  or sensor data is used. QAOA is solved live in your browser by a from-scratch
+  statevector simulator (<code>qaoa.js</code>), cross-checked against PennyLane;
+  at this problem size it's expected to match, not beat, the classical
+  brute-force optimum — see the project README for details.
 </footer>
 
+<script src="qaoa.js"></script>
 <script>
 const runBtn = document.getElementById('runBtn');
 const statusPill = document.getElementById('statusPill');
@@ -387,41 +388,19 @@ function renderMap(data, assignment) {
   }
 }
 
-async function loadScenario() {
-  const res = await fetch('/api/scenario');
-  scenario = await res.json();
-  renderMap(scenario, null);
-}
-
-async function pollJob(jobId) {
-  let seenLogCount = 0;
-  while (true) {
-    const res = await fetch(`/api/status/${jobId}`);
-    const job = await res.json();
-
-    while (seenLogCount < job.log.length) {
-      logLine(job.log[seenLogCount]);
-      seenLogCount++;
-    }
-    progressFill.style.width = `${Math.round((job.progress || 0) * 100)}%`;
-
-    if (job.status === 'done') {
-      renderResults(job.result);
-      renderMap(scenario, job.result.classical.assignment);
-      setStatus('restored', 'CONNECTIVITY RESTORED');
-      runBtn.disabled = false;
-      runBtn.textContent = 'Run again';
-      return;
-    }
-    if (job.status === 'error') {
-      logLine('ERROR: ' + job.error);
-      setStatus('offline', 'OPTIMIZATION FAILED');
-      runBtn.disabled = false;
-      runBtn.textContent = 'Retry';
-      return;
-    }
-    await new Promise(r => setTimeout(r, 200));
-  }
+// --- Optimization run (fully client-side, see qaoa.js) ---
+function buildScenario() {
+  const toLatLon = obj => Object.fromEntries(
+    Object.entries(obj).map(([name, p]) => [name, { lat: p[0], lon: p[1] }]));
+  const { distance, uavNames, zoneNames } =
+    QAOA.buildDistanceMatrix(QAOA.FLOOD_ZONES, QAOA.UAV_BASES);
+  return {
+    flood_zones: toLatLon(QAOA.FLOOD_ZONES),
+    uav_bases: toLatLon(QAOA.UAV_BASES),
+    distance_matrix: distance,
+    uav_names: uavNames,
+    zone_names: zoneNames,
+  };
 }
 
 function renderResults(result) {
@@ -441,7 +420,10 @@ function renderResults(result) {
     Math.abs(result.quantum.total_km - result.classical.total_km) < 0.05;
   outcomeEl.textContent = matches ? 'MATCH' : (result.quantum.valid ? 'SUBOPTIMAL' : 'NO MATCH');
   outcomeEl.className = 'v' + (matches ? ' match' : '');
-  document.getElementById('qubitsUsed').textContent = `${result.qubits_used} qubits · lightning.qubit simulator`;
+
+  const p = result.quantum.readout_probability;
+  document.getElementById('qubitsUsed').textContent =
+    `${result.qubits_used} qubits · in-browser statevector sim · readout p=${p.toFixed(2)}`;
 }
 
 runBtn.addEventListener('click', async () => {
@@ -453,12 +435,31 @@ runBtn.addEventListener('click', async () => {
   progressFill.style.width = '0%';
   renderMap(scenario, null);
 
-  const res = await fetch('/api/run', { method: 'POST' });
-  const { job_id } = await res.json();
-  pollJob(job_id);
+  try {
+    // yieldEvery:1 repaints between optimizer steps so the console reads as a
+    // live feed rather than dumping 20 lines at once -- the whole run is <1s.
+    const result = await QAOA.run({
+      yieldEvery: 1,
+      onProgress: (frac, msg) => {
+        progressFill.style.width = `${Math.round(frac * 100)}%`;
+        logLine(msg);
+      },
+    });
+    renderResults(result);
+    renderMap(scenario, result.classical.assignment);
+    setStatus('restored', 'CONNECTIVITY RESTORED');
+    runBtn.textContent = 'Run again';
+  } catch (err) {
+    logLine('ERROR: ' + (err && err.message ? err.message : err));
+    setStatus('offline', 'OPTIMIZATION FAILED');
+    runBtn.textContent = 'Retry';
+  } finally {
+    runBtn.disabled = false;
+  }
 });
 
-loadScenario();
+scenario = buildScenario();
+renderMap(scenario, null);
 </script>
 </body>
 </html>

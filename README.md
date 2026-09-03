@@ -53,25 +53,67 @@ simulator can run.
 
 ## Run it
 
-**Option A — standalone script (original, no frontend):**
+**Live demo:** _(add your Vercel URL here after the first deploy)_
+
+**Option A — in the browser, nothing to install:**
+Open `frontend/index.html` directly, or serve the folder:
+```bash
+python -m http.server -d frontend 8000   # then open http://localhost:8000
+```
+The entire pipeline — QUBO construction, the all-bitstrings verification,
+QAOA training over 3 restarts, and readout — runs client-side in
+[`frontend/qaoa.js`](frontend/qaoa.js) in well under a second. No Python, no
+backend, no PennyLane. **This is what the deployed site runs.**
+
+**Option B — PennyLane reference implementation (standalone script):**
 ```bash
 pip install -r requirements.txt
 python uav_placement_qaoa.py
 ```
+Prints both assignments and saves a map plot to `uav_assignment.png`.
 
-**Option B — with the web dashboard:**
+**Option C — FastAPI backend serving the same dashboard:**
 ```bash
 cd backend
 pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8000
 ```
-Then open `http://localhost:8000` in a browser. Click **"Run optimization"**
-to dispatch the real QAOA pipeline (~2-3s) and watch the live optimizer log,
-mission map, and classical-vs-quantum comparison update.
+Kept as the reference/server-side path. Note the deployed site does **not**
+use this — see below.
 
-The dashboard is a dark ops-console UI: a live terminal-style log streams
-the optimizer's actual progress (not a fake loading bar), and the map lights
-up UAV-to-zone connections once an assignment resolves.
+The dashboard is a dark ops-console UI: a live terminal-style log streams the
+optimizer's actual progress (not a fake loading bar), and the map lights up
+UAV-to-zone connections once an assignment resolves.
+
+## Two implementations, cross-checked
+
+The physics is implemented twice, on purpose:
+
+| | Implementation | Role |
+|---|---|---|
+| Reference | [`backend/optimizer.py`](backend/optimizer.py) | PennyLane + `lightning.qubit`. The thing that gets to be right. |
+| Deployed | [`frontend/qaoa.js`](frontend/qaoa.js) | From-scratch complex statevector simulator — Hadamard init, diagonal cost-layer phases, strided RX mixer butterflies, hand-rolled Adam matching PennyLane's defaults. |
+
+That claim is checkable rather than asserted.
+[`tools/crosscheck.py`](tools/crosscheck.py) runs both over identical fixed
+parameters and compares the QUBO matrices, the Ising Hamiltonian, the full
+64-amplitude probability distribution, and the energy expectation. The JS side
+is executed by headless Chrome via `--dump-dom`, so no Node install is needed:
+
+```bash
+backend/venv/Scripts/python.exe tools/crosscheck.py
+```
+
+Both implementations also verify the QUBO→Ising conversion against the direct
+cost function for **all 2⁶ bitstrings** at runtime before trusting it — that
+conversion is exactly where these implementations tend to break silently.
+
+## Deploying
+
+The site is pure static. [`vercel.json`](vercel.json) points Vercel at
+`frontend/` as the output directory; there is no build step and no serverless
+function. The Python backend stays in the repo as the reference
+implementation, but nothing on the deployed page depends on it.
 
 ## Possible extensions
 
