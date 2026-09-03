@@ -1,0 +1,8 @@
+# The deployed site is pure static: frontend/index.html + frontend/qaoa.js.
+# Keeping the Python side out of the build context stops Vercel from
+# detecting this as a Python project and trying to build a backend.
+backend/
+tools/
+requirements.txt
+uav_placement_qaoa.py
+uav_assignment.png
